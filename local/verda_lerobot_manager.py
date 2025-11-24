@@ -11,6 +11,7 @@ import paramiko
 from paramiko.ssh_exception import AuthenticationException
 from datacrunch import DataCrunchClient
 from datacrunch.exceptions import APIException
+from dotenv import load_dotenv
 
 
 # -------------
@@ -451,8 +452,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--ssh-user", default="root", help="SSH username (default: root)")
     sp.add_argument(
       "--env-file",
-      default=".env",
-      help="Local .env file to upload to the remote instance",
+      default=".env.remote",
+      help="Local env file to upload to the remote instance (e.g., .env.remote)",
     )
     sp.add_argument(
       "--hostname-prefix",
@@ -488,6 +489,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
   parser = build_parser()
   args = parser.parse_args()
+
+  # Load local .env and .env.remote for credentials/defaults (no override)
+  load_dotenv(".env", override=False)
+  load_dotenv(".env.remote", override=False)
 
   project_root = Path(__file__).resolve().parents[1]
   env_file = Path(args.env_file).expanduser()
