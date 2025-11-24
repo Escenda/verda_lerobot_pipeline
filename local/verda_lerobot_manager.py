@@ -447,9 +447,6 @@ def build_parser() -> argparse.ArgumentParser:
         "Use 'auto' to probe available locations interactively."
       ),
     )
-    sp.add_argument("--ssh-key-name", required=True, help="Name of SSH key in Verda console")
-    sp.add_argument("--ssh-private-key", required=True, help="Path to matching private key")
-    sp.add_argument("--ssh-user", default="root", help="SSH username (default: root)")
     sp.add_argument(
       "--env-file",
       default=".env.remote",
@@ -465,6 +462,7 @@ def build_parser() -> argparse.ArgumentParser:
       default="lerobot-train",
       help="Prefix for instance description",
     )
+    sp.add_argument("--ssh-user", default="root", help="SSH username (default: root)")
     sp.add_argument(
       "--run-id",
       default=None,
@@ -499,13 +497,16 @@ def main() -> None:
   if not env_file.is_file():
     raise SystemExit(f"env file not found: {env_file}")
 
+  ssh_key_name = os.environ["VERDA_SSH_KEY_NAME"]
+  ssh_private_key = os.environ["VERDA_SSH_PRIVATE_KEY"]
+
   spec = InstanceSpec(
     gpu_model=args.gpu_model,
     gpus_per_instance=args.gpus_per_instance,
     image=args.image,
     location=args.location,
-    ssh_key_name=args.ssh_key_name,
-    ssh_private_key=Path(args.ssh_private_key).expanduser(),
+    ssh_key_name=ssh_key_name,
+    ssh_private_key=Path(ssh_private_key).expanduser(),
     ssh_user=args.ssh_user,
     hostname_prefix=args.hostname_prefix,
     description_prefix=args.description_prefix,

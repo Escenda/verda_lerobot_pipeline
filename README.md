@@ -3,7 +3,7 @@
 このパッケージは、次の一連の処理を自動化するための最小構成です。
 
 1. Verda (DataCrunch) の Spot インスタンスを指定 GPU 構成でデプロイ
-2. SSH で接続し、`.env` と学習用スクリプトを転送
+2. SSH で接続し、`.env.remote` を `.env` としてアップロードし、学習用スクリプトを転送
 3. リモートで LeRobot の環境構築 (venv + `pip install lerobot`)
 4. Hugging Face Hub 上の **プライベートデータセット** を使って `lerobot` の学習を開始
 5. `wandb` に学習ログを送信
@@ -18,7 +18,9 @@
 
 ```text
 verda_lerobot_pipeline/
-  .env.example    # リモートに送る .env のサンプル
+  .env.example          # ローカル専用 (DataCrunch 認証など)
+  .env.remote.example   # リモートに送る .env のサンプル
+  .env.remote           # 実際にリモートへ送る設定 (Git 管理外を推奨)
   local/
     verda_lerobot_manager.py  # ローカルで実行するオーケストレータ
   remote/
@@ -30,29 +32,30 @@ verda_lerobot_pipeline/
 
 ## 前提条件
 
-ローカル環境:
+ローカル環境で必要なもの:
 
 ```bash
-pip install datacrunch paramiko huggingface_hub
+pip install datacrunch paramiko huggingface_hub python-dotenv
 ```
 
-環境変数:
-
-```bash
-export DATACRUNCH_CLIENT_ID="..."
-export DATACRUNCH_CLIENT_SECRET="..."
-```
-
-Hugging Face / wandb のトークンなどは `.env` に記述し、**ローカルには置くが Git にはコミットしない** 前提です。
+認証は `.env`（ローカル用）に記載し、Git にはコミットしないでください。
 
 ---
 
-## .env の設定
+## .env / .env.remote の設定
 
-`.env.example` をコピーして編集します。
+ローカル用（DataCrunch 認証など）:
 
 ```bash
 cp .env.example .env
+```
+
+主に設定するのは `DATACRUNCH_CLIENT_ID` / `DATACRUNCH_CLIENT_SECRET` などローカルで必要な認証です。
+
+リモート用（学習設定）:
+
+```bash
+cp .env.remote.example .env.remote
 ```
 
 主に設定するのは以下です:
@@ -62,13 +65,21 @@ cp .env.example .env
 - `LEROBOT_DATASET_REPO_ID`  
   - 事前にアップロード済みの HF dataset repo_id (`your-user/your-dataset`)
 - `LEROBOT_POLICY_TYPE`  
-  - `act` など、使いたいポリシーの種類
+  - `act` など、使いたいポリシーの種類（SmolVLA なら `policy.path` を併用）
+- `LEROBOT_POLICY_PATH`  
+  - SmolVLA など事前学習済みチェックポイント（例: `lerobot/smolvla_base`）
+- `LEROBOT_RENAME_MAP`, `LEROBOT_POLICY_EMPTY_CAMERAS`  
+  - データセットのカメラキーをポリシー期待に合わせる場合に使用
+- `LEROBOT_BATCH_SIZE`  
+  - バッチサイズ指定
 - `LEROBOT_JOB_NAME`, `LEROBOT_OUTPUT_DIR`  
   - 出力ディレクトリ (`outputs/train/...`) の指定
 - `LEROBOT_CHECKPOINT_REPO_ID` (任意だが推奨)  
   - `checkpoints/last` をアップロードする Hugging Face model repo_id  
   - ここにアップロードされたチェックポイントから `resume` ができます
 - `WANDB_API_KEY`, `WANDB_PROJECT`, `WANDB_ENTITY`, `LEROBOT_WANDB_ENABLE`
+- `LEROBOT_TORCH_NIGHTLY` (任意)  
+  - B200(sm_100) など最新 GPU で nightly PyTorch/cu128 を上書きしたい場合は `1` を設定
 
 ---
 
@@ -79,18 +90,22 @@ cp .env.example .env
 ```bash
 cd verda_lerobot_pipeline
 
-python local/verda_lerobot_manager.py train --gpu-model H100 --gpus-per-instance 4 --ssh-key-name your-verda-ssh-key-name --ssh-private-key ~/.ssh/id_ed25519 --env-file .env --run-id first_run
+python local/verda_lerobot_manager.py train \
+  --gpu-model H100 \
+  --gpus-per-instance 4 \
+  --env-file .env.remote \
+  --run-id first_run
 ```
 
 フロー:
 
 1. Verda API 経由で Spot インスタンスを作成 (`contract=SPOT`)  
 2. IP 付与後に SSH で接続  
-3. `remote/setup_env.sh`, `remote/train_lerobot_entry.py`, `.env` を `/home/ubuntu/lerobot_run` に転送  
+3. `remote/setup_env.sh`, `remote/train_lerobot_entry.py`, `.env.remote`（リモートでは `.env` として保存）を `/root/lerobot_run` に転送  
 4. `setup_env.sh train` を実行  
-   - venv 作成 → `lerobot[all]`, `huggingface_hub[cli]`, `wandb` をインストール  
+   - venv 作成 → `lerobot[smolvla]` + 依存をインストール（必要に応じて nightly PyTorch/cu128）  
    - `train_lerobot_entry.py --mode train` を起動  
-   - `python -m lerobot.scripts.train ...` で学習開始  
+   - `python -m lerobot.scripts.lerobot_train ...` で学習開始  
 5. 正常終了すると、`LEROBOT_CHECKPOINT_REPO_ID` が設定されていれば  
    `OUTPUT_DIR/checkpoints/last` が Hugging Face Hub にアップロードされます  
 6. ローカル側では `runs/{run_id}/outputs/` 以下に `OUTPUT_DIR` が再帰コピーされます  
@@ -106,7 +121,12 @@ python local/verda_lerobot_manager.py train --gpu-model H100 --gpus-per-instance
 再開コマンド例:
 
 ```bash
-python local/verda_lerobot_manager.py resume --gpu-model H100 --gpus-per-instance 4 --ssh-key-name your-verda-ssh-key-name --ssh-private-key ~/.ssh/id_ed25519 --env-file .env --checkpoint-repo-id your-username/lerobot-checkpoint-private-dataset --run-id resume_run_1
+python local/verda_lerobot_manager.py resume \
+  --gpu-model H100 \
+  --gpus-per-instance 4 \
+  --env-file .env.remote \
+  --checkpoint-repo-id your-username/lerobot-checkpoint-private-dataset \
+  --run-id resume_run_1
 ```
 
 このときの流れ:
