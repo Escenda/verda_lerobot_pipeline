@@ -1,0 +1,54 @@
+# Example training config for LeRobot on Verda spot instances.
+# シークレットは .env に記載し、トレーニングのパラメータはこの YAML にまとめます。
+
+dataset:
+  # Private dataset already uploaded to the Hugging Face Hub
+  repo_id: your-username/your-private-dataset
+
+policy:
+  # Choose one of: act | smolvla | pi0
+  type: pi0
+  # For SmolVLA, set the pretrained checkpoint and rename maps:
+  # path: lerobot/smolvla_base
+  # rename_map:
+  #   observation.images.overhead: observation.images.camera1
+  #   observation.images.wrist: observation.images.camera2
+  # empty_cameras: 1
+  # For Pi0, these defaults are recommended (can be overridden):
+  pretrained_path: lerobot/pi0_base
+  compile_model: true
+  gradient_checkpointing: true
+  dtype: bfloat16
+  # Optional: HF repo to push the policy after training
+  # repo_id: your-username/policy-repo
+
+job:
+  name: pi0_private_dataset
+  output_dir: outputs/train/pi0_private_dataset
+
+training:
+  steps: 200000
+  batch_size: 64
+  # save_freq: 2000           # default is 20000 in LeRobot
+  # save_checkpoint: true     # set to false to disable checkpointing
+
+checkpoint:
+  # repo_id: your-username/lerobot-checkpoint-private-dataset
+  upload_every_save: false     # set true to sync checkpoints/last every save_freq
+  upload_poll_seconds: 60      # watcher poll interval (seconds)
+
+wandb:
+  enable: true                 # WANDB_API_KEY/PROJECT/ENTITY は .env に記載
+
+accelerate:
+  # use: true                  # force accelerate launch even on single GPU
+  # num_processes: 4
+  # num_machines: 1
+  # mixed_precision: bf16      # fp16 / bf16 / no
+  # config_file: /root/accelerate_config.yaml
+
+torch:
+  nightly: false               # set true to install nightly cu128 wheels
+
+runtime:
+  # device: cuda               # override policy.device if needed
