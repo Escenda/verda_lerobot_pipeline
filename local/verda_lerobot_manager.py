@@ -43,6 +43,7 @@ class InstanceSpec:
   ssh_user: str
   hostname_prefix: str
   description_prefix: str
+  os_disk_size_gb: Optional[int] = None
 
 
 def select_instance_type(client: DataCrunchClient, gpu_model: str, gpus_per_instance: int):
@@ -108,6 +109,18 @@ def create_spot_instance(client: DataCrunchClient, spec: InstanceSpec) -> str:
     is_spot=True,
   )
 
+  os_volume_payload = None
+  if spec.os_disk_size_gb:
+    vol_name = f"os-{spec.hostname_prefix}-{int(time.time())}"
+    if len(vol_name) > 32:
+      vol_name = vol_name[:32]
+    os_volume_payload = {
+      "size": spec.os_disk_size_gb,
+      "type": "NVMe",
+      "name": vol_name,
+    }
+    log(f"Requesting OS disk size {spec.os_disk_size_gb} GB (type=NVMe)")
+
   hostname = f"{spec.hostname_prefix}-{int(time.time())}"
   description = (
     f"{spec.description_prefix} (gpu={spec.gpu_model}x{spec.gpus_per_instance}, loc={location})"
@@ -121,6 +134,7 @@ def create_spot_instance(client: DataCrunchClient, spec: InstanceSpec) -> str:
     description=description,
     ssh_key_ids=[ssh_key_id],
     location=location,
+    os_volume=os_volume_payload,
     is_spot=True,
     contract="SPOT",
   )
@@ -573,6 +587,12 @@ def build_parser() -> argparse.ArgumentParser:
         ),
       )
     sp.add_argument(
+      "--os-disk-size",
+      type=int,
+      default=None,
+      help="OSディスクサイズ(GB)。Spot新規作成時のみ有効。未指定ならデフォルトサイズのまま。",
+    )
+    sp.add_argument(
       "--env-file",
       default=".env",
       help="Local env file containing secrets to upload to the remote instance",
@@ -652,6 +672,7 @@ def main() -> None:
 
   image = getattr(args, "image", "ubuntu-24.04-cuda-12.8-open-docker")
   location = getattr(args, "location", "auto")
+  os_disk_size_gb = getattr(args, "os_disk_size", None)
   spec = InstanceSpec(
     gpu_model=args.gpu_model,
     gpus_per_instance=args.gpus_per_instance,
@@ -662,6 +683,7 @@ def main() -> None:
     ssh_user=args.ssh_user,
     hostname_prefix=args.hostname_prefix,
     description_prefix=args.description_prefix,
+    os_disk_size_gb=os_disk_size_gb,
   )
 
   run_id = args.run_id or str(int(time.time()))

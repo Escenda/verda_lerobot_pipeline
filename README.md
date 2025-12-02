@@ -107,6 +107,7 @@ python local/verda_lerobot_manager.py train \
 フロー:
 
 1. Verda API 経由で Spot インスタンスを作成 (`contract=SPOT`)  
+   - OS ディスクサイズを増やしたい場合は `--os-disk-size 200` のように GB で指定（未指定ならイメージのデフォルト容量）
 2. IP 付与後に SSH で接続  
 3. `remote/setup_env.sh`, `remote/train_lerobot_entry.py`, `.env`（シークレット）と `train.remote.yaml` を `/root/lerobot_run` に転送  
 4. `setup_env.sh train` を実行  
